@@ -37,15 +37,15 @@ namespace StockNotifications
             var stocksToMonitor = GetStocksToMonitor();
             foreach (var stock in stocksToMonitor)
             {
-                var currentPrice = await GetCurrentPrice(stock.Region, stock.Symbol);
+                var (currentPrice, fullName) = await GetStockQuoteDetails(stock.Region, stock.Symbol);
                 var notificationHistory = GetNotificationHistoryForToday(stock.Symbol);
                 if (notificationHistory == null)
                 {
                     if (currentPrice < stock.AlertPriceThreshold)
-                        await TriggerAlert(stock, currentPrice);
+                        await TriggerAlert(stock, currentPrice, fullName);
                 }
                 else if (currentPrice < notificationHistory.LastNotifiedPrice)
-                    await TriggerAlert(stock, currentPrice);
+                    await TriggerAlert(stock, currentPrice, fullName);
             }
         }
 
@@ -57,11 +57,11 @@ namespace StockNotifications
             return stocks;
         }
 
-        private async Task<double> GetCurrentPrice(string stockRegion, string stockSymbol)
+        private async Task<(double currentPrice, string fullName)> GetStockQuoteDetails(string stockRegion, string stockSymbol)
         {
             var quote = await _yahooFinanceClient.GetQuotes(stockRegion, stockSymbol);
             var stockResult = quote.quoteResponse.result.First(r => r.symbol == stockSymbol);
-            return stockResult.regularMarketPrice;
+            return (stockResult.regularMarketPrice, stockResult.longName);
         }
 
 
@@ -75,16 +75,17 @@ namespace StockNotifications
             return history.FirstOrDefault();
         }
 
-        private async Task TriggerAlert(MonitoredStock stock, double currentPrice)
+        private async Task TriggerAlert(MonitoredStock stock, double currentPrice, string shortName)
         {
-            await NotifyPriceDrop(stock.Symbol, currentPrice);
+            await NotifyPriceDrop(stock.Symbol, currentPrice, shortName);
             await SaveNotificationHistory(stock.Symbol, currentPrice);
         }
 
-        private async Task NotifyPriceDrop(string stockSymbol, double currentPrice)
+        private async Task NotifyPriceDrop(string stockSymbol, double currentPrice, string stockFullName)
         {
-            var message = $"{stockSymbol} has dropped to {currentPrice}";
-            await _slackClient.SendMessageViaWebhook(_appSettings.NotificationsSlackWebhook, message);
+            var escapedSymbol = stockSymbol.Replace(".", "·");
+            var message = $"{stockFullName} ({escapedSymbol}) ${currentPrice}";
+            await _slackClient.SendMessageViaWebhook(_appSettings.NotificationsSlackWebhook, "Stock Alerts", message);
         }
 
         private async Task SaveNotificationHistory(string stockSymbol, double currentPrice)

@@ -15,9 +15,9 @@ namespace StockNotifications.Clients
             _httpClient = httpClient;
         }
 
-        public async Task SendMessageViaWebhook(string webhookUrl, string messageText)
+        public async Task SendMessageViaWebhook(string webhookUrl, string senderName, string messageText)
         {
-            var messageContent = CreateMessageContent(messageText);
+            var messageContent = CreatePayload(senderName, messageText);
             var request = new HttpRequestMessage
             {
                 Method = HttpMethod.Post,
@@ -28,9 +28,13 @@ namespace StockNotifications.Clients
         }
 
 
-        private HttpContent CreateMessageContent(string messageText)
+        private HttpContent CreatePayload(string senderName, string messageText)
         {
-            var message = new { text = messageText };
+            var message = new
+            {
+                username = senderName,
+                text = messageText,
+            };
             return new StringContent(JsonSerializer.Serialize(message));
         }
     }
