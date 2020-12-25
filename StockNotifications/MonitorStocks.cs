@@ -35,62 +35,75 @@ namespace StockNotifications
         {
 
             var stocksToMonitor = GetStocksToMonitor();
-            foreach (var stock in stocksToMonitor)
+            var regionalStockGroups = GetStocksByRegion(stocksToMonitor);
+
+            foreach (var regionalStocks in regionalStockGroups)
             {
-                var (currentPrice, fullName) = await GetStockQuoteDetails(stock.Region, stock.Symbol);
-                var notificationHistory = GetNotificationHistoryForToday(stock.Symbol);
-                if (notificationHistory == null)
+                var stockQuotes = await GetStockQuotes(regionalStocks);
+                foreach (var (currentPrice, name, symbol) in stockQuotes)
                 {
-                    if (currentPrice < stock.AlertPriceThreshold)
-                        await TriggerAlert(stock, currentPrice, fullName);
+                    var monitoredStock = regionalStocks.Single(s => s.Symbol == symbol);
+                    var notificationHistory = GetNotificationHistoryForToday(symbol);
+                    if (notificationHistory == null)
+                    {
+                        if (currentPrice < monitoredStock.AlertPriceThreshold)
+                            await TriggerAlert(monitoredStock, currentPrice, name);
+                    }
+                    else if (currentPrice < notificationHistory.LastNotifiedPrice)
+                        await TriggerAlert(monitoredStock, currentPrice, name);
                 }
-                else if (currentPrice < notificationHistory.LastNotifiedPrice)
-                    await TriggerAlert(stock, currentPrice, fullName);
             }
         }
 
 
-        private IEnumerable<MonitoredStock> GetStocksToMonitor()
+        private static IEnumerable<IGrouping<string, MonitoredStock>> GetStocksByRegion(
+            IReadOnlyList<MonitoredStock> stocksToMonitor)
+        {
+            return stocksToMonitor.GroupBy(s => s.Region);
+        }
+
+        private IReadOnlyList<MonitoredStock> GetStocksToMonitor()
         {
             var table = _tableClient.GetTableReference(StocksToMonitorTableName);
             var stocks = table.CreateQuery<MonitoredStock>().Where(s => s.IsActive).ToList();
             return stocks;
         }
 
-        private async Task<(double currentPrice, string fullName)> GetStockQuoteDetails(string stockRegion, string stockSymbol)
+        private async Task<IEnumerable<(double RegularMarketPrice, string LongName, string Symbol)>> GetStockQuotes(
+            IGrouping<string, MonitoredStock> regionalStockGroups)
         {
-            var quote = await _yahooFinanceClient.GetQuotes(stockRegion, stockSymbol);
-            var stockResult = quote.quoteResponse.result.First(r => r.symbol == stockSymbol);
-            return (stockResult.regularMarketPrice, stockResult.longName);
+            var stockRegion = regionalStockGroups.Key;
+            var stockSymbols = regionalStockGroups.Select(s => s.Symbol);
+            var quotes = await _yahooFinanceClient.GetQuotes(stockRegion, stockSymbols);
+            return quotes.quoteResponse.result.Select(r => (r.regularMarketPrice, r.longName, r.symbol));
         }
 
-
-        private NotificationHistory GetNotificationHistoryForToday(string stockStockSymbol)
+        private NotificationHistory GetNotificationHistoryForToday(string symbol)
         {
             var table = _tableClient.GetTableReference(HistoryTableName);
             var history = table.CreateQuery<NotificationHistory>()
-                .Where(h => h.PartitionKey == NzTodayDateString && 
-                            h.RowKey == stockStockSymbol)
+                .Where(h => h.PartitionKey == NzTodayDateString &&
+                            h.RowKey == symbol)
                 .ToList();
             return history.FirstOrDefault();
         }
 
-        private async Task TriggerAlert(MonitoredStock stock, double currentPrice, string shortName)
+        private async Task TriggerAlert(MonitoredStock stock, double currentPrice, string fullName)
         {
-            await NotifyPriceDrop(stock.Symbol, currentPrice, shortName);
+            await NotifyPriceDrop(stock.Symbol, currentPrice, fullName);
             await SaveNotificationHistory(stock.Symbol, currentPrice);
         }
 
-        private async Task NotifyPriceDrop(string stockSymbol, double currentPrice, string stockFullName)
+        private async Task NotifyPriceDrop(string symbol, double currentPrice, string fullName)
         {
-            var escapedSymbol = stockSymbol.Replace(".", "·");
-            var message = $"{stockFullName} ({escapedSymbol}) ${currentPrice}";
+            var escapedSymbol = symbol.Replace(".", "·");
+            var message = $"{fullName} ({escapedSymbol}) ${currentPrice}";
             await _slackClient.SendMessageViaWebhook(_appSettings.NotificationsSlackWebhook, "Stock Alerts", message);
         }
 
-        private async Task SaveNotificationHistory(string stockSymbol, double currentPrice)
+        private async Task SaveNotificationHistory(string symbol, double currentPrice)
         {
-            var entity = new NotificationHistory(NzTodayDateString, stockSymbol) { LastNotifiedPrice = currentPrice };
+            var entity = new NotificationHistory(NzTodayDateString, symbol) { LastNotifiedPrice = currentPrice };
             var insertOrMergeOperation = TableOperation.InsertOrMerge(entity);
             var table = _tableClient.GetTableReference(HistoryTableName);
             await table.ExecuteAsync(insertOrMergeOperation);

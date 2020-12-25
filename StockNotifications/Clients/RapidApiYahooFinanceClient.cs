@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
 using StockNotifications.Clients.Interfaces;
@@ -19,10 +20,16 @@ namespace StockNotifications.Clients
 
         public async Task<GetQuotesResponse> GetQuotes(string stockRegion, string stockSymbol)
         {
+            return await GetQuotes(stockRegion, new[] { stockSymbol });
+        }
+
+        public async Task<GetQuotesResponse> GetQuotes(string stockRegion, IEnumerable<string> stockSymbols)
+        {
+            var queryParams = GetQuotesQueryParams(stockRegion, stockSymbols);
             var request = new HttpRequestMessage
             {
                 Method = HttpMethod.Get,
-                RequestUri = new Uri($"https://{_appSettings.RapidApiYahooFinanceHost}/market/v2/get-quotes?region={stockRegion}&symbols={stockSymbol}"),
+                RequestUri = new Uri($"https://{_appSettings.RapidApiYahooFinanceHost}/market/v2/get-quotes?{queryParams}"),
                 Headers =
                 {
                     { "x-rapidapi-key", _appSettings.RapidApiKey },
@@ -33,6 +40,13 @@ namespace StockNotifications.Clients
             response.EnsureSuccessStatusCode();
             var body = await response.Content.ReadAsAsync<GetQuotesResponse>();
             return body;
+        }
+
+
+        private string GetQuotesQueryParams(string stockRegion, IEnumerable<string> stockSymbols)
+        {
+            var symbols = string.Join(',', stockSymbols);
+            return $"region={stockRegion}&symbols={symbols}";
         }
     }
 }
