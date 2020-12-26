@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net.Http;
 using Microsoft.Azure.Functions.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.Extensions.Http;
@@ -14,18 +15,35 @@ namespace StockNotifications
 {
     public class Startup : FunctionsStartup
     {
+        private readonly IConfiguration _configuration;
         private IAsyncPolicy<HttpResponseMessage> RetryPolicy => GetRetryPolicy();
+
+        public Startup()
+        {
+            _configuration = BuildConfiguration();
+        }
 
         public override void Configure(IFunctionsHostBuilder builder)
         {
+            builder.Services.Configure<AppSettings>(_configuration);
+
             builder.Services.AddHttpClient<IYahooFinanceClient, RapidApiYahooFinanceClient>()
-                .SetHandlerLifetime(TimeSpan.FromMinutes(5))
+                .SetHandlerLifetime(TimeSpan.FromMinutes(15))
                 .AddPolicyHandler(RetryPolicy);
+
             builder.Services.AddHttpClient<ISlackClient, SlackClient>()
-                .SetHandlerLifetime(TimeSpan.FromMinutes(5))
+                .SetHandlerLifetime(TimeSpan.FromMinutes(15))
                 .AddPolicyHandler(RetryPolicy);
         }
 
+
+        private IConfigurationRoot BuildConfiguration()
+        {
+            return new ConfigurationBuilder()
+                .AddJsonFile("local.settings.json", true, true)
+                .AddEnvironmentVariables()
+                .Build();
+        }
 
         private IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
         {

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Options;
 using StockNotifications.Clients.Interfaces;
 using StockNotifications.Models.ExternalApis.RapidApiYahooFinance;
 
@@ -12,10 +13,10 @@ namespace StockNotifications.Clients
         private readonly HttpClient _httpClient;
         private readonly AppSettings _appSettings;
 
-        public RapidApiYahooFinanceClient(HttpClient httpClient)
+        public RapidApiYahooFinanceClient(HttpClient httpClient, IOptions<AppSettings> appSettings)
         {
             _httpClient = httpClient;
-            _appSettings = AppSettings.LoadAppSettings();
+            _appSettings = appSettings.Value;
         }
 
         public async Task<GetQuotesResponse> GetQuotes(string stockRegion, string stockSymbol)

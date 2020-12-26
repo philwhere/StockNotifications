@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos.Table;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StockNotifications.Clients.Interfaces;
 using StockNotifications.Extensions;
 using StockNotifications.Models.ExternalApis.RapidApiYahooFinance;
@@ -14,21 +15,23 @@ namespace StockNotifications
 {
     public class MonitorStocks
     {
+        private readonly AppSettings _appSettings;
         private readonly IYahooFinanceClient _yahooFinanceClient;
         private readonly ISlackClient _slackClient;
-        private readonly CloudTableClient _tableClient;
-        private readonly AppSettings _appSettings;
-        private const string HistoryTableName = "NotificationHistory";
-        private const string MonitoredStocksTableName = "StocksToMonitor";
+
+        private readonly CloudTable _historyTable;
+        private readonly CloudTable _monitoredStocksTable;
         private static string NzTodayDateString => DateTime.Now.ToTableDateFormat();
 
-        public MonitorStocks(IYahooFinanceClient yahooFinanceClient, ISlackClient slackClient)
+        public MonitorStocks(IOptions<AppSettings> appSettings, IYahooFinanceClient yahooFinanceClient, ISlackClient slackClient)
         {
+            _appSettings = appSettings.Value;
             _yahooFinanceClient = yahooFinanceClient;
             _slackClient = slackClient;
-            _appSettings = AppSettings.LoadAppSettings();
-            var storageAccount = CloudStorageAccount.Parse(AppSettings.LoadAppSettings().StorageConnectionString);
-            _tableClient = storageAccount.CreateCloudTableClient();
+
+            var tableClient = CreateTableClient();
+            _historyTable = tableClient.GetTableReference("NotificationHistory");
+            _monitoredStocksTable = tableClient.GetTableReference("StocksToMonitor");
         }
 
         [FunctionName("MonitorStocks")]
@@ -54,8 +57,7 @@ namespace StockNotifications
 
         private IReadOnlyCollection<NotificationHistory> GetAllNotificationsToday()
         {
-            var table = _tableClient.GetTableReference(HistoryTableName);
-            return table.CreateQuery<NotificationHistory>()
+            return _historyTable.CreateQuery<NotificationHistory>()
                 .Where(h => h.PartitionKey == NzTodayDateString)
                 .ToList();
         }
@@ -89,8 +91,7 @@ namespace StockNotifications
 
         private IEnumerable<MonitoredStock> GetStocksToMonitor()
         {
-            var table = _tableClient.GetTableReference(MonitoredStocksTableName);
-            return table.CreateQuery<MonitoredStock>().Where(s => s.IsActive).AsEnumerable();
+            return _monitoredStocksTable.CreateQuery<MonitoredStock>().Where(s => s.IsActive).AsEnumerable();
         }
 
         private async Task<IEnumerable<QuoteResult>> GetStockQuotes(IGrouping<string, MonitoredStock> regionalStockGroup)
@@ -118,8 +119,13 @@ namespace StockNotifications
         {
             var entity = new NotificationHistory(NzTodayDateString, symbol) { LastNotifiedPrice = currentPrice };
             var insertOrMergeOperation = TableOperation.InsertOrMerge(entity);
-            var table = _tableClient.GetTableReference(HistoryTableName);
-            await table.ExecuteAsync(insertOrMergeOperation);
+            await _historyTable.ExecuteAsync(insertOrMergeOperation);
+        }
+
+        private CloudTableClient CreateTableClient()
+        {
+            var storageAccount = CloudStorageAccount.Parse(_appSettings.StorageConnectionString);
+            return storageAccount.CreateCloudTableClient();
         }
     }
 }
