@@ -2,7 +2,7 @@
 {
     public class QuoteResponse
     {
-        public Result[] result { get; set; }
-        public object error { get; set; }
+        public QuoteResult[] Result { get; set; }
+        public object Error { get; set; }
     }
 }

@@ -3,6 +3,6 @@
 
     public class GetQuotesResponse
     {
-        public QuoteResponse quoteResponse { get; set; }
+        public QuoteResponse QuoteResponse { get; set; }
     }
 }

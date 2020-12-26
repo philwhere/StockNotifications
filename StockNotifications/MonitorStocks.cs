@@ -7,6 +7,7 @@ using Microsoft.Azure.WebJobs;
 using Microsoft.Extensions.Logging;
 using StockNotifications.Clients.Interfaces;
 using StockNotifications.Extensions;
+using StockNotifications.Models.ExternalApis.RapidApiYahooFinance;
 using StockNotifications.Models.TableStorageEntities;
 
 namespace StockNotifications
@@ -35,24 +36,30 @@ namespace StockNotifications
         {
             var stocksToMonitor = GetStocksToMonitor();
             var regionalStockGroups = GroupStocksByRegion(stocksToMonitor);
-
+            var allNotificationsToday = GetAllNotificationsToday();
             foreach (var regionalStockGroup in regionalStockGroups)
             {
                 var stockQuotes = await GetStockQuotes(regionalStockGroup);
-                var monitoredStocksWithQuotes = JoinStockDetails(regionalStockGroup, stockQuotes);
+                var pairedStockDetails = JoinStockDetails(regionalStockGroup, stockQuotes, allNotificationsToday);
 
-                foreach (var (monitoredStock, quote) in monitoredStocksWithQuotes)
+                foreach (var (monitoredStock, quote, notificationHistory) in pairedStockDetails)
                 {
-                    var (currentPrice, name, symbol) = quote;
-                    var notificationHistory = GetNotificationHistoryForToday(symbol);
-
+                    var currentPrice = quote.RegularMarketPrice;
                     if (CurrentPriceUnderThreshold(notificationHistory, currentPrice, monitoredStock))
-                        await TriggerAlert(monitoredStock, currentPrice, name);
+                        await TriggerAlert(monitoredStock, currentPrice, quote.LongName);
                 }
             }
         }
 
 
+        private IReadOnlyCollection<NotificationHistory> GetAllNotificationsToday()
+        {
+            var table = _tableClient.GetTableReference(HistoryTableName);
+            return table.CreateQuery<NotificationHistory>()
+                .Where(h => h.PartitionKey == NzTodayDateString)
+                .ToList();
+        }
+        
         private bool CurrentPriceUnderThreshold(NotificationHistory notificationHistory, double currentPrice, MonitoredStock monitoredStock)
         {
             return notificationHistory == null
@@ -60,42 +67,38 @@ namespace StockNotifications
                 : currentPrice < notificationHistory.LastNotifiedPrice;
         }
 
-        private IEnumerable<(MonitoredStock MonitoredStock, (double RegularMarketPrice, string LongName, string Symbol) Quote)>
-            JoinStockDetails(IGrouping<string, MonitoredStock> regionalStockGroup,
-                IEnumerable<(double RegularMarketPrice, string LongName, string Symbol)> stockQuotes)
+        private IEnumerable<(MonitoredStock MonitoredStock, QuoteResult Quote, NotificationHistory History)> JoinStockDetails(
+                IEnumerable<MonitoredStock> regionalStockGroup,
+                IEnumerable<QuoteResult> stockQuotes,
+                IEnumerable<NotificationHistory> allNotificationsToday)
         {
-            return regionalStockGroup.AsEnumerable().Join(stockQuotes,
+            var monitoredStocksWithQuotes = regionalStockGroup.Join(stockQuotes,
                 s => s.Symbol, q => q.Symbol,
                 (stock, quote) => (stock, quote));
+
+            return monitoredStocksWithQuotes.GroupJoin(allNotificationsToday,
+                join => join.stock?.Symbol,
+                h => h.StockSymbol,
+                (join, h) => (join.stock, join.quote, h.FirstOrDefault()));
         }
 
-        private IEnumerable<IGrouping<string, MonitoredStock>> GroupStocksByRegion(IReadOnlyList<MonitoredStock> stocksToMonitor)
+        private IEnumerable<IGrouping<string, MonitoredStock>> GroupStocksByRegion(IEnumerable<MonitoredStock> stocksToMonitor)
         {
             return stocksToMonitor.GroupBy(s => s.Region);
         }
 
-        private IReadOnlyList<MonitoredStock> GetStocksToMonitor()
+        private IEnumerable<MonitoredStock> GetStocksToMonitor()
         {
             var table = _tableClient.GetTableReference(MonitoredStocksTableName);
-            return table.CreateQuery<MonitoredStock>().Where(s => s.IsActive).ToList();
+            return table.CreateQuery<MonitoredStock>().Where(s => s.IsActive).AsEnumerable();
         }
 
-        private async Task<IEnumerable<(double RegularMarketPrice, string LongName, string Symbol)>> GetStockQuotes(
-            IGrouping<string, MonitoredStock> regionalStockGroup)
+        private async Task<IEnumerable<QuoteResult>> GetStockQuotes(IGrouping<string, MonitoredStock> regionalStockGroup)
         {
             var stockRegion = regionalStockGroup.Key;
             var stockSymbols = regionalStockGroup.Select(s => s.Symbol);
             var quotes = await _yahooFinanceClient.GetQuotes(stockRegion, stockSymbols);
-            return quotes.quoteResponse.result.Select(r => (r.regularMarketPrice, r.longName, r.symbol));
-        }
-
-        private NotificationHistory GetNotificationHistoryForToday(string symbol)
-        {
-            var table = _tableClient.GetTableReference(HistoryTableName);
-            var history = table.CreateQuery<NotificationHistory>()
-                .Where(h => h.PartitionKey == NzTodayDateString && h.RowKey == symbol)
-                .AsEnumerable();
-            return history.FirstOrDefault();
+            return quotes.QuoteResponse.Result;
         }
 
         private async Task TriggerAlert(MonitoredStock stock, double currentPrice, string fullName)

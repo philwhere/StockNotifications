@@ -2,6 +2,6 @@
 {
     public class QuoteSummary
     {
-        public Earnings earnings { get; set; }
+        public QuoteEarnings QuoteEarnings { get; set; }
     }
 }
