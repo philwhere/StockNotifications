@@ -19,11 +19,6 @@ namespace StockNotifications.Clients
             _appSettings = appSettings.Value;
         }
 
-        public async Task<GetQuotesResponse> GetQuotes(string stockRegion, string stockSymbol)
-        {
-            return await GetQuotes(stockRegion, new[] { stockSymbol });
-        }
-
         public async Task<GetQuotesResponse> GetQuotes(string stockRegion, IEnumerable<string> stockSymbols)
         {
             var queryParams = GetQuotesQueryParams(stockRegion, stockSymbols);

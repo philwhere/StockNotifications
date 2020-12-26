@@ -6,7 +6,6 @@ namespace StockNotifications.Clients.Interfaces
 {
     public interface IYahooFinanceClient
     {
-        Task<GetQuotesResponse> GetQuotes(string stockRegion, string stockSymbol);
         Task<GetQuotesResponse> GetQuotes(string stockRegion, IEnumerable<string> stockSymbols);
     }
 }
