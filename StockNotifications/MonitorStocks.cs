@@ -16,14 +16,13 @@ namespace StockNotifications
     public class MonitorStocks
     {
         private readonly AppSettings _appSettings;
-        private readonly IYahooFinanceClient _yahooFinanceClient;
-        private readonly ISlackClient _slackClient;
-
         private readonly CloudTable _historyTable;
         private readonly CloudTable _monitoredStocksTable;
-        private static string NzTodayDateString => DateTime.Now.ToTableDateFormat();
+        private readonly ISlackClient _slackClient;
+        private readonly IYahooFinanceClient _yahooFinanceClient;
 
-        public MonitorStocks(IOptions<AppSettings> appSettings, IYahooFinanceClient yahooFinanceClient, ISlackClient slackClient)
+        public MonitorStocks(IOptions<AppSettings> appSettings, IYahooFinanceClient yahooFinanceClient,
+            ISlackClient slackClient)
         {
             _appSettings = appSettings.Value;
             _yahooFinanceClient = yahooFinanceClient;
@@ -34,8 +33,11 @@ namespace StockNotifications
             _monitoredStocksTable = tableClient.GetTableReference("StocksToMonitor");
         }
 
+        private static string NzTodayDateString => DateTime.Now.ToTableDateFormat();
+
         [FunctionName("MonitorStocks")]
-        public async Task Run([TimerTrigger("%MonitorStocksSchedule%")] TimerInfo timer, ILogger log)
+        public async Task Run([TimerTrigger("%MonitorStocksSchedule%")]
+            TimerInfo timer, ILogger log)
         {
             var stocksToMonitor = GetStocksToMonitor();
             var regionalStockGroups = GroupStocksByRegion(stocksToMonitor);
@@ -61,15 +63,17 @@ namespace StockNotifications
                 .Where(h => h.PartitionKey == NzTodayDateString)
                 .ToList();
         }
-        
-        private bool CurrentPriceUnderThreshold(NotificationHistory notificationHistory, double currentPrice, MonitoredStock monitoredStock)
+
+        private bool CurrentPriceUnderThreshold(NotificationHistory notificationHistory, double currentPrice,
+            MonitoredStock monitoredStock)
         {
             return notificationHistory == null
                 ? currentPrice < monitoredStock.AlertPriceThreshold
                 : currentPrice < notificationHistory.LastNotifiedPrice;
         }
 
-        private IEnumerable<(MonitoredStock MonitoredStock, QuoteResult Quote, NotificationHistory History)> JoinStockDetails(
+        private IEnumerable<(MonitoredStock MonitoredStock, QuoteResult Quote, NotificationHistory History)>
+            JoinStockDetails(
                 IEnumerable<MonitoredStock> regionalStockGroup,
                 IEnumerable<QuoteResult> stockQuotes,
                 IEnumerable<NotificationHistory> allNotificationsToday)
@@ -84,7 +88,8 @@ namespace StockNotifications
                 (join, h) => (join.stock, join.quote, h.FirstOrDefault()));
         }
 
-        private IEnumerable<IGrouping<string, MonitoredStock>> GroupStocksByRegion(IEnumerable<MonitoredStock> stocksToMonitor)
+        private IEnumerable<IGrouping<string, MonitoredStock>> GroupStocksByRegion(
+            IEnumerable<MonitoredStock> stocksToMonitor)
         {
             return stocksToMonitor.GroupBy(s => s.Region);
         }
@@ -94,7 +99,8 @@ namespace StockNotifications
             return _monitoredStocksTable.CreateQuery<MonitoredStock>().Where(s => s.IsActive).AsEnumerable();
         }
 
-        private async Task<IEnumerable<QuoteResult>> GetStockQuotes(IGrouping<string, MonitoredStock> regionalStockGroup)
+        private async Task<IEnumerable<QuoteResult>> GetStockQuotes(
+            IGrouping<string, MonitoredStock> regionalStockGroup)
         {
             var stockRegion = regionalStockGroup.Key;
             var stockSymbols = regionalStockGroup.Select(s => s.Symbol);
@@ -117,7 +123,7 @@ namespace StockNotifications
 
         private async Task SaveNotificationHistory(string symbol, double currentPrice)
         {
-            var entity = new NotificationHistory(NzTodayDateString, symbol) { LastNotifiedPrice = currentPrice };
+            var entity = new NotificationHistory(NzTodayDateString, symbol) {LastNotifiedPrice = currentPrice};
             var insertOrMergeOperation = TableOperation.InsertOrMerge(entity);
             await _historyTable.ExecuteAsync(insertOrMergeOperation);
         }

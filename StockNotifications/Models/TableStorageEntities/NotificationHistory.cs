@@ -6,7 +6,8 @@ namespace StockNotifications.Models.TableStorageEntities
     public class NotificationHistory : TableEntity
     {
         public NotificationHistory()
-        { }
+        {
+        }
 
         public NotificationHistory(string dateNz, string stockSymbol)
         {

@@ -10,8 +10,8 @@ namespace StockNotifications.Clients
 {
     public class RapidApiYahooFinanceClient : IYahooFinanceClient
     {
-        private readonly HttpClient _httpClient;
         private readonly AppSettings _appSettings;
+        private readonly HttpClient _httpClient;
 
         public RapidApiYahooFinanceClient(HttpClient httpClient, IOptions<AppSettings> appSettings)
         {
@@ -25,11 +25,12 @@ namespace StockNotifications.Clients
             var request = new HttpRequestMessage
             {
                 Method = HttpMethod.Get,
-                RequestUri = new Uri($"https://{_appSettings.RapidApiYahooFinanceHost}/market/v2/get-quotes?{queryParams}"),
+                RequestUri =
+                    new Uri($"https://{_appSettings.RapidApiYahooFinanceHost}/market/v2/get-quotes?{queryParams}"),
                 Headers =
                 {
-                    { "x-rapidapi-key", _appSettings.RapidApiKey },
-                    { "x-rapidapi-host", _appSettings.RapidApiYahooFinanceHost }
+                    {"x-rapidapi-key", _appSettings.RapidApiKey},
+                    {"x-rapidapi-host", _appSettings.RapidApiYahooFinanceHost}
                 }
             };
             using var response = await _httpClient.SendAsync(request);

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net;
 using System.Net.Http;
 using Microsoft.Azure.Functions.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
@@ -16,12 +17,13 @@ namespace StockNotifications
     public class Startup : FunctionsStartup
     {
         private readonly IConfiguration _configuration;
-        private IAsyncPolicy<HttpResponseMessage> RetryPolicy => GetRetryPolicy();
 
         public Startup()
         {
             _configuration = BuildConfiguration();
         }
+
+        private IAsyncPolicy<HttpResponseMessage> RetryPolicy => GetRetryPolicy();
 
         public override void Configure(IFunctionsHostBuilder builder)
         {
@@ -51,9 +53,9 @@ namespace StockNotifications
             const int maxRetryCount = 3;
             return HttpPolicyExtensions
                 .HandleTransientHttpError()
-                .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                .OrResult(msg => msg.StatusCode == HttpStatusCode.TooManyRequests)
                 .WaitAndRetryAsync(maxRetryCount, retryAttempt => TimeSpan.FromSeconds(Math.Pow(1.5, retryAttempt))
-                                                               + TimeSpan.FromMilliseconds(jitterer.Next(333, 666)));
+                                                                  + TimeSpan.FromMilliseconds(jitterer.Next(333, 666)));
         }
     }
 }

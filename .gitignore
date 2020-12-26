@@ -338,3 +338,4 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+/StockNotifications/Properties/ServiceDependencies/StockNotifications - Zip Deploy/profile.arm.json

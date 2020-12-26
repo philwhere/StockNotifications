@@ -33,7 +33,7 @@ namespace StockNotifications.Clients
             var message = new
             {
                 username = senderName,
-                text = messageText,
+                text = messageText
             };
             return new StringContent(JsonSerializer.Serialize(message));
         }
