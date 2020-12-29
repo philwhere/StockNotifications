@@ -36,8 +36,10 @@ namespace StockNotifications
         private static string NzTodayDateString => DateTime.Now.ToTableDateFormat();
 
         [FunctionName("MonitorStocks")]
-        public async Task Run([TimerTrigger("%MonitorStocksSchedule%")]
-            TimerInfo timer, ILogger log)
+        public async Task Run(
+            [TimerTrigger("%MonitorStocksSchedule%")]
+            TimerInfo timer,
+            ILogger log)
         {
             var stocksToMonitor = GetStocksToMonitor();
             var regionalStockGroups = GroupStocksByRegion(stocksToMonitor);
@@ -50,7 +52,7 @@ namespace StockNotifications
                 foreach (var (monitoredStock, quote, notificationHistory) in pairedStockDetails)
                 {
                     var currentPrice = quote.RegularMarketPrice;
-                    if (CurrentPriceUnderThreshold(notificationHistory, currentPrice, monitoredStock))
+                    if (ShouldAlert(notificationHistory, currentPrice, monitoredStock))
                         await TriggerAlert(monitoredStock, currentPrice, quote.LongName);
                 }
             }
@@ -64,11 +66,11 @@ namespace StockNotifications
                 .ToList();
         }
 
-        private bool CurrentPriceUnderThreshold(NotificationHistory notificationHistory, double currentPrice,
+        private bool ShouldAlert(NotificationHistory notificationHistory, double currentPrice,
             MonitoredStock monitoredStock)
         {
             return notificationHistory == null
-                ? currentPrice < monitoredStock.AlertPriceThreshold
+                ? currentPrice <= monitoredStock.AlertPriceThreshold
                 : currentPrice < notificationHistory.LastNotifiedPrice;
         }
 
